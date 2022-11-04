@@ -11,7 +11,6 @@ def test_usb_descriptor(
     usb_vcp_intf,
     usb_vcp_eps
 ):
-    print(usb_device)
     # USB composite device
     assert(usb_device.bDeviceClass == 0xEF)
     assert(usb_device.bDeviceSubClass == 0x02)

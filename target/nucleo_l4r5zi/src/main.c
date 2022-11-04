@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include <zephyr/drivers/pwm.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -33,7 +34,7 @@ int32_t cmd_test_dump(const struct shell *shell, size_t argc, char **argv) {
 	ARG_UNUSED(argc);
 	ARG_UNUSED(argv);
 
-	for (int32_t i = 0; i < 1600; i+=8) {
+	for (int32_t i = 0; i < 400; i+=8) {
 		shell_info(
 			shell,
 			"0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x",
@@ -44,20 +45,42 @@ int32_t cmd_test_dump(const struct shell *shell, size_t argc, char **argv) {
 	return 0;
 }
 
+/* make sure to give this variable an alignment that openocd won't complain about */
+static volatile int32_t __attribute__((aligned (16))) var = 0;
+
 int32_t cmd_test_var(const struct shell *shell, size_t argc, char **argv) {
 	ARG_UNUSED(argc);
 	ARG_UNUSED(argv);
 
-	static volatile int32_t var = 0;
 	shell_info(shell, "int 'var' address: %p", &var);
-	shell_info(shell, "int 'var' value: 0x%08x", var);
+	shell_info(shell, "int 'var' value: %d", var);
 
+	return 0;
+}
+
+int32_t cmd_test_setvar(const struct shell *shell, size_t argc, char **argv) {
+	ARG_UNUSED(argc);
+
+	var = strtol(argv[1], NULL, 0);
+	shell_info(shell, "new 'var' value: %d", var);
+
+	return 0;
+}
+
+int32_t cmd_test_fn(const struct shell *shell, size_t argc, char **argv) {
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+
+	shell_info(shell, "fn address: %p", cmd_test_fn);
+	
 	return 0;
 }
 
 SHELL_STATIC_SUBCMD_SET_CREATE(test_subcmds,
 	SHELL_CMD(dump, NULL, "dump large amount of data to shell", cmd_test_dump),
 	SHELL_CMD(var, NULL, "print address and value of an i32 variable", cmd_test_var),
+	SHELL_CMD_ARG(setvar, NULL, "set the value of an i32 variable", cmd_test_setvar, 2, 0),
+	SHELL_CMD(fn, NULL, "print address of the called function", cmd_test_fn),
 	SHELL_SUBCMD_SET_END
 );
 SHELL_CMD_REGISTER(test, &test_subcmds, "test commands", NULL);
