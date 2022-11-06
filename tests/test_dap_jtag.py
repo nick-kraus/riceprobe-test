@@ -1,45 +1,11 @@
 import re
 import time
 
-class Dap:
-    def __init__(self, endpoints):
-        self.out_ep, self.in_ep = endpoints
-
-    def write(self, data):
-        return self.out_ep.write(data)
-
-    def read(self, len, timeout=None):
-        return self.in_ep.read(len, timeout).tobytes()
-
-    def command(self, data, expect=None):
-        self.write(data)
-        read = self.read(512)
-        if expect is not None:
-            assert(read == expect)
-        return read
-
-    # reset the dap probe and target to a default known state for the jtag interface
-    def jtag_default(self):
-        # configure dap port as jtag
-        self.command(b'\x02\x02', expect=b'\x02\x02')
-        # set a reasonable clock rate (1MHz)
-        self.command(b'\x11\x40\x42\x0f\x00', expect=b'\x11\x00')
-        # reset target
-        data = self.command(b'\x10\x00\x80\xff\xff\x00\x00')
-        assert(data[0] == 0x10)
-        time.sleep(0.01)
-        data = self.command(b'\x10\x80\x80\xff\xff\x00\x00')
-        assert(data[0] == 0x10)
-        # set jtag tap state to reset then idle
-        self.command(b'\x14\x02\x48\x00\x01\x00', expect=b'\x14\x00')        
-
-def test_unsupported(usb_dap_eps):
-    dap = Dap(usb_dap_eps)
+def test_unsupported(dap):
     # unsupported writes should return the single hex byte 0xff
     dap.command(b'\xf0', expect=b'\xff')
 
-def test_info_command(usb_dap_eps):
-    dap = Dap(usb_dap_eps)
+def test_info_command(dap):
     # incomplete command request
     dap.command(b'\x00', expect=b'\xff')
     # vendor name from info should match USB vendor string
@@ -79,8 +45,7 @@ def test_info_command(usb_dap_eps):
     # unsupported info id
     dap.command(b'\x00\xbb', expect=b'\xff')
 
-def test_host_status_command(usb_dap_eps):
-    dap = Dap(usb_dap_eps)
+def test_host_status_command(dap):
     # incomplete command request
     dap.command(b'\x01\x00', expect=b'\xff')
     # enable connected led
@@ -95,8 +60,7 @@ def test_host_status_command(usb_dap_eps):
     dap.command(b'\x01\x02\x00', expect=b'\x01\xff')
     dap.command(b'\x01\x00\x02', expect=b'\x01\xff')
 
-def test_delay_command(usb_dap_eps):
-    dap = Dap(usb_dap_eps)
+def test_delay_command(dap):
     # incomplete command request
     dap.command(b'\x09\xff', expect=b'\xff')
     start = time.time()
@@ -107,17 +71,15 @@ def test_delay_command(usb_dap_eps):
     delta = (end - start) * 1000000
     assert(delta > 30000 and delta < 100000)
 
-def test_reset_target_command(usb_dap_eps):
-    dap = Dap(usb_dap_eps)
+def test_reset_target_command(dap):
     dap.command(b'\x0a', expect=b'\x0a\x00\x00')
 
-def test_disconnect_connect_swj_pins_commands(usb_dap_eps):
-    dap = Dap(usb_dap_eps)
+def test_disconnect_connect_swj_pins_commands(dap):
     # incomplete command requests
     dap.command(b'\x10', expect=b'\xff')
     dap.command(b'\x10\x00', expect=b'\xff')
     dap.command(b'\x10\x00\x00\xff\xff', expect=b'\xff')
-    dap.jtag_default()
+    dap.configure_jtag()
     # set all outputs low, make sure they read low, tdo will read high
     dap.command(b'\x10\x00\x8f\xff\xff\x00\x00', expect=b'\x10\x08')
     # set each output high one-by-one
@@ -143,8 +105,7 @@ def test_disconnect_connect_swj_pins_commands(usb_dap_eps):
     dap.command(b'\x10\x80\x80\xff\xff\x00\x00', expect=b'\x10\x8c')
     dap.command(b'\x03', expect=b'\x03\x00')
 
-def test_swj_clock_sequence_commands(usb_dap_eps):
-    dap = Dap(usb_dap_eps)
+def test_swj_clock_sequence_commands(dap):
     # incomplete clock command request
     dap.command(b'\x11\x00\x00', expect=b'\xff')
     # incomplete sequence command request
@@ -155,7 +116,7 @@ def test_swj_clock_sequence_commands(usb_dap_eps):
     dap.command(b'\x11\x87\xd6\x12\x00', expect=b'\x11\x00')
 
     # read the JTAG idcode using the SWJ sequence command any time we are just changing tap states
-    dap.jtag_default()
+    dap.configure_jtag()
     # select-dr-scan, select-ir-scan, capture-ir, shift-ir
     dap.command(b'\x12\x04\x03', expect=b'\x12\x00')
     # shift the 4-bit idcode (0b1110)
@@ -171,8 +132,7 @@ def test_swj_clock_sequence_commands(usb_dap_eps):
     # exit-1-dr, update-dr, idle
     dap.command(b'\x12\x03\x03', expect=b'\x12\x00')
 
-def test_jtag_sequence_configure_idcode_command(usb_dap_eps):
-    dap = Dap(usb_dap_eps)
+def test_jtag_sequence_configure_command(dap):
     # incomplete command requests
     dap.command(b'\x14', expect=b'\xff')
     dap.command(b'\x14\x01\x42', expect=b'\xff')
@@ -181,7 +141,7 @@ def test_jtag_sequence_configure_idcode_command(usb_dap_eps):
     dap.command(b'\x02\x01', expect=b'\x02\x01')
     dap.command(b'\x14\x03\x02\xaa\x09\xaa\xaa\x00\xaa\xaa\xaa\xaa\xaa\xaa\xaa\xaa', expect=b'\x14\xff')
     # now for correct usage of the command
-    dap.jtag_default()
+    dap.configure_jtag()
     # here we set the jtag ir to the idcode instruction (0b1110), the target is an stm32l4r5zi
     # which has a boundary scan tap (5-bit ir) followed by a debug tap (4-bit ir)
     #
@@ -213,8 +173,7 @@ def test_jtag_sequence_configure_idcode_command(usb_dap_eps):
     # now send the 5-sequence sequence
     dap.command(b'\x14\x05' + sequence, expect=b'\x14\x00\x77\x04\xa0\x4b')
 
-def test_jtag_configure_idcode_command(usb_dap_eps):
-    dap = Dap(usb_dap_eps)
+def test_jtag_configure_idcode_command(dap):
     # incomplete configure command requests
     dap.command(b'\x15\x05\x00', expect=b'\xff')
     dap.command(b'\x15\x02\x00', expect=b'\xff')
@@ -223,7 +182,7 @@ def test_jtag_configure_idcode_command(usb_dap_eps):
     # incomplete idcode command request
     dap.command(b'\x16', expect=b'\xff')
     # now configure the tap chain for the actual target: stm32l4r5zi
-    dap.jtag_default()
+    dap.configure_jtag()
     dap.command(b'\x15\x02\x04\x05', expect=b'\x15\x00')
     # should fail with an invalid index, and when not configured as jtag
     dap.command(b'\x16\x08', expect=b'\x16\xff\x00\x00\x00\x00')
@@ -233,9 +192,7 @@ def test_jtag_configure_idcode_command(usb_dap_eps):
     # run the idcode command and make sure we get the same result
     dap.command(b'\x16\x00', expect=b'\x16\x00\x77\x04\xa0\x4b')
 
-def test_jtag_transfer_commands(usb_dap_eps):
-    dap = Dap(usb_dap_eps)
-
+def test_jtag_transfer_commands(dap):
     # when port is disconnected or index invalid, transfer and transfer_block
     # should return no sequences and data
     dap.command(b'\x03', expect=b'\x03\x00')
@@ -245,7 +202,7 @@ def test_jtag_transfer_commands(usb_dap_eps):
     dap.command(b'\x05\x08\x01\x06', expect=b'\x05\x00\x00')
     dap.command(b'\x06\x08\x01\x00\x06', expect=b'\x06\x00\x00\x00')
 
-    dap.jtag_default()
+    dap.configure_jtag()
     # configure the jtag tap details
     dap.command(b'\x15\x02\x04\x05', expect=b'\x15\x00')
 

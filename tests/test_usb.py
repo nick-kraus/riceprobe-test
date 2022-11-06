@@ -1,16 +1,7 @@
 import re
 import usb.util
 
-# makes sure that we can read all the expected values back from the device descriptor
-def test_usb_descriptor(
-    usb_device,
-    usb_dap_intf,
-    usb_dap_eps,
-    usb_io_intf,
-    usb_io_eps,
-    usb_vcp_intf,
-    usb_vcp_eps
-):
+def test_device_descriptor(usb_device):
     # USB composite device
     assert(usb_device.bDeviceClass == 0xEF)
     assert(usb_device.bDeviceSubClass == 0x02)
@@ -25,50 +16,82 @@ def test_usb_descriptor(
     regex = re.compile(r'^RPB1-[23][0-9][0-5][0-9][0-9]{6}[0-9A-Z]$')
     assert(re.match(regex, usb.util.get_string(usb_device, usb_device.iSerialNumber)))
 
-    assert(usb_dap_intf is not None)
+def test_dap_interface_descirptor(usb_device):
+    intf = usb.util.find_descriptor(
+        usb_device.get_active_configuration(),
+        custom_match=lambda i : usb.util.get_string(usb_device, i.iInterface) == 'Rice CMSIS-DAP v2'
+    )
+
+    assert(intf is not None)
     # doesn't yet support the swo endpoint
-    assert(usb_dap_intf.bNumEndpoints == 0x02)
+    assert(intf.bNumEndpoints == 0x02)
     # vendor specific device
-    assert(usb_dap_intf.bInterfaceClass == 0xFF)
-    assert(usb_dap_intf.bInterfaceSubClass == 0x00)
-    assert(usb_dap_intf.bInterfaceProtocol == 0x00)
+    assert(intf.bInterfaceClass == 0xFF)
+    assert(intf.bInterfaceSubClass == 0x00)
+    assert(intf.bInterfaceProtocol == 0x00)
     # endpoints must be configured in the correct order
-    (dap_out_ep, dap_in_ep) = usb_dap_eps
+    (out_ep, in_ep) = intf.endpoints()
     # bulk out endpoint
-    assert(dap_out_ep is not None)
-    assert((dap_out_ep.bEndpointAddress & 0x80 == 0) and (dap_out_ep.bmAttributes == 0x02))
+    assert(out_ep is not None)
+    assert((out_ep.bEndpointAddress & 0x80 == 0) and (out_ep.bmAttributes == 0x02))
     # bulk in endpoint
-    assert(dap_in_ep is not None)
-    assert((dap_in_ep.bEndpointAddress & 0x80 == 0x80) and (dap_in_ep.bmAttributes == 0x02))
-    
-    assert(usb_io_intf is not None)
-    assert(usb_io_intf.bNumEndpoints == 0x02)
-    # vendor specific device
-    assert(usb_io_intf.bInterfaceClass == 0xFF)
-    assert(usb_io_intf.bInterfaceSubClass == 0x00)
-    assert(usb_io_intf.bInterfaceProtocol == 0x00)
-    # endpoints must be configured in the correct order
-    (io_out_ep, io_in_ep) = usb_io_eps
-    # bulk out endpoint
-    assert(io_out_ep is not None)
-    assert((io_out_ep.bEndpointAddress & 0x80 == 0) and (io_out_ep.bmAttributes == 0x02))
-    # bulk in endpoint
-    assert(io_in_ep is not None)
-    assert((io_in_ep.bEndpointAddress & 0x80 == 0x80) and (io_in_ep.bmAttributes == 0x02))
+    assert(in_ep is not None)
+    assert((in_ep.bEndpointAddress & 0x80 == 0x80) and (in_ep.bmAttributes == 0x02))
 
-    (vcp_comm_intf, vcp_data_intf) = usb_vcp_intf
-    (vcp_intp_ep, vcp_out_ep, vcp_in_ep) = usb_vcp_eps
-    assert(vcp_comm_intf is not None)
-    assert(vcp_comm_intf.bNumEndpoints == 0x01)
+def test_io_interface_descirptor(usb_device):
+    intf = usb.util.find_descriptor(
+        usb_device.get_active_configuration(),
+        custom_match=lambda i : usb.util.get_string(usb_device, i.iInterface) == 'Rice I/O v1'
+    )
+
+    assert(intf is not None)
+    assert(intf.bNumEndpoints == 0x02)
+    # vendor specific device
+    assert(intf.bInterfaceClass == 0xFF)
+    assert(intf.bInterfaceSubClass == 0x00)
+    assert(intf.bInterfaceProtocol == 0x00)
+    # endpoints must be configured in the correct order
+    (out_ep, in_ep) = intf.endpoints()
+    # bulk out endpoint
+    assert(out_ep is not None)
+    assert((out_ep.bEndpointAddress & 0x80 == 0) and (out_ep.bmAttributes == 0x02))
+    # bulk in endpoint
+    assert(in_ep is not None)
+    assert((in_ep.bEndpointAddress & 0x80 == 0x80) and (in_ep.bmAttributes == 0x02))
+
+def test_vcp_interface_descriptor(usb_device):
+    comm_intf = usb.util.find_descriptor(
+        usb_device.get_active_configuration(),
+        bInterfaceClass=0x02,
+        bInterfaceSubClass=0x02
+    )
+    data_intf = usb.util.find_descriptor(
+        usb_device.get_active_configuration(),
+        bInterfaceClass=0x0A,
+        bInterfaceSubClass=0x02
+    )
+
+    assert(comm_intf is not None)
+    assert(comm_intf.bNumEndpoints == 0x01)
+    assert(data_intf is not None)
+    assert(data_intf.bNumEndpoints == 0x02)
+
+    intp_ep = comm_intf.endpoints()[0]
+    out_ep = usb.util.find_descriptor(
+        data_intf,
+        custom_match=lambda e : usb.util.endpoint_direction(e.bEndpointAddress) == usb.util.ENDPOINT_OUT
+    )
+    in_ep = usb.util.find_descriptor(
+        data_intf,
+        custom_match=lambda e : usb.util.endpoint_direction(e.bEndpointAddress) == usb.util.ENDPOINT_IN
+    )
+
     # interrupt in endpoint
-    assert(vcp_intp_ep is not None)
-    assert((vcp_intp_ep.bEndpointAddress & 0x80 == 0x80) and (vcp_intp_ep.bmAttributes == 0x03))
-
-    assert(vcp_data_intf is not None)
-    assert(vcp_data_intf.bNumEndpoints == 0x02)
+    assert(intp_ep is not None)
+    assert((intp_ep.bEndpointAddress & 0x80 == 0x80) and (intp_ep.bmAttributes == 0x03))
     # bulk out endpoint
-    assert(vcp_out_ep is not None)
-    assert(vcp_out_ep.bmAttributes == 0x02)
+    assert(out_ep is not None)
+    assert(out_ep.bmAttributes == 0x02)
     # bulk in endpoint
-    assert(vcp_in_ep is not None)
-    assert(vcp_in_ep.bmAttributes == 0x02)
+    assert(in_ep is not None)
+    assert(in_ep.bmAttributes == 0x02)

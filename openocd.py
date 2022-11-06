@@ -5,12 +5,25 @@ import subprocess
 import time
 
 class OpenOCD:
+    # for now the config commands are hardcoded for the given target (stm32l4r5zitx), this may need to be
+    # more generalized later on, but for now it is simple and works
+    CONFIG_COMMANDS = [
+        # use the RICEProbe cmsis-dap interface
+        'source [find interface/cmsis-dap.cfg]',
+        'cmsis_dap_vid_pid 0xFFFE 0xFFD1',
+        # testing just the jtag transport here
+        'transport select jtag',
+        # target is a stm32l4r5zitx
+        'source [find target/stm32l4x.cfg]',
+        # use hardware reset
+        'reset_config srst_only srst_nogate connect_assert_srst'
+    ]
+    # terminator character for tcl commands
     TERM = b'\x1a'
 
-    def __init__(self, config, exec=None, tcl_port=6666, rtt_port=7777):
+    def __init__(self, exec=None, tcl_port=6666, rtt_port=7777):
         # openocd server initialization
         self.exec = exec if exec is not None else shutil.which('openocd')
-        self.config = config
         self.tcl_port = tcl_port
         self.rtt_port = rtt_port
         self.process = None
@@ -30,7 +43,7 @@ class OpenOCD:
         openocd_args = [self.exec]
         # make sure to use the expected port
         openocd_args.extend(['-c', f'tcl_port {self.tcl_port}'])
-        for command in self.config:
+        for command in self.CONFIG_COMMANDS:
             openocd_args.extend(['-c', command])
         self.process = subprocess.Popen(
             openocd_args,
@@ -40,12 +53,8 @@ class OpenOCD:
         )
         # connect over the tcl interface
         self.tcl_sock.connect((self.ip, self.tcl_port))
-        # ensure we can send a command
+        # ensure we can send a command, and receive input back
         self.send(b'version')
-
-    def __enter__(self):
-        self.start()
-        return self
 
     def close(self):
         try:
@@ -58,9 +67,6 @@ class OpenOCD:
             self.tcl_sock.close()
             self.rtt_sock.close()
             self.process.terminate()
-
-    def __exit__(self, _type, _value, _traceback):
-        self.close()
 
     def send(self, data):
         self.tcl_sock.send(data + self.TERM)

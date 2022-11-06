@@ -1,41 +1,9 @@
 import pathlib
-import pytest
 import tempfile
 import time
 
-from openocd import OpenOCD
-
-@pytest.fixture(scope="module")
-def openocd_jtag_nucleo_l4r5zi():
-    config_args = [
-        # use the RICEProbe cmsis-dap interface
-        'source [find interface/cmsis-dap.cfg]',
-        'cmsis_dap_vid_pid 0xFFFE 0xFFD1',
-        # testing just the jtag transport here
-        'transport select jtag',
-        # target is a stm32l4r5zitx
-        'source [find target/stm32l4x.cfg]',
-        # use hardware reset
-        'reset_config srst_only srst_nogate connect_assert_srst'
-    ]
-    with OpenOCD(config_args) as openocd:
-        # ensure the target is reset and initialized, since we connected under reset
-        openocd.send(b'reset init')
-        yield openocd
-
-@pytest.fixture(scope="module")
-def rtt_nucleo_l4r5zi(openocd_jtag_nucleo_l4r5zi):
-    openocd = openocd_jtag_nucleo_l4r5zi
-    openocd.send(b'resume')
-    rtt = openocd.enable_rtt()
-    # make sure we can send data and receive the shell prompt
-    assert(rtt.send(b'\n\n') == 2)
-    assert(rtt.expect_bytes(b'target:~$ ') is not None)
-    assert(rtt.expect_bytes(b'target:~$ ') is not None)
-    yield rtt
-
-def test_flash_read(openocd_jtag_nucleo_l4r5zi):
-    openocd = openocd_jtag_nucleo_l4r5zi
+def test_flash_read(openocd_rtt):
+    openocd, _ = openocd_rtt
     # start in a halted state
     openocd.send(b'halt')
     assert(b'halted' in openocd.send(b'$_CHIPNAME.cpu curstate'))
@@ -50,9 +18,8 @@ def test_flash_read(openocd_jtag_nucleo_l4r5zi):
     openocd.send(b'resume')
     assert(b'running' in openocd.send(b'$_CHIPNAME.cpu curstate'))
 
-def test_manipulate_memory(openocd_jtag_nucleo_l4r5zi, rtt_nucleo_l4r5zi):
-    openocd = openocd_jtag_nucleo_l4r5zi
-    rtt = rtt_nucleo_l4r5zi
+def test_manipulate_memory(openocd_rtt):
+    openocd, rtt = openocd_rtt
     # start in a running state
     openocd.send(b'resume')
     assert(b'running' in openocd.send(b'$_CHIPNAME.cpu curstate'))
@@ -99,9 +66,8 @@ def test_manipulate_memory(openocd_jtag_nucleo_l4r5zi, rtt_nucleo_l4r5zi):
     openocd.send(b'resume')
     assert(b'running' in openocd.send(b'$_CHIPNAME.cpu curstate'))
 
-def test_breakpoint(openocd_jtag_nucleo_l4r5zi, rtt_nucleo_l4r5zi):
-    openocd = openocd_jtag_nucleo_l4r5zi
-    rtt = rtt_nucleo_l4r5zi
+def test_breakpoint(openocd_rtt):
+    openocd, rtt = openocd_rtt
     # start in a running state
     openocd.send(b'resume')
     assert(b'running' in openocd.send(b'$_CHIPNAME.cpu curstate'))
@@ -136,9 +102,8 @@ def test_breakpoint(openocd_jtag_nucleo_l4r5zi, rtt_nucleo_l4r5zi):
     openocd.send(b'resume')
     assert(b'running' in openocd.send(b'$_CHIPNAME.cpu curstate'))
 
-def test_rtt_transfer(openocd_jtag_nucleo_l4r5zi, rtt_nucleo_l4r5zi):
-    openocd = openocd_jtag_nucleo_l4r5zi
-    rtt = rtt_nucleo_l4r5zi
+def test_rtt_transfer(openocd_rtt):
+    openocd, rtt = openocd_rtt
     # start in a running state
     openocd.send(b'resume')
     assert(b'running' in openocd.send(b'$_CHIPNAME.cpu curstate'))
